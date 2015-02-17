@@ -1,7 +1,8 @@
-<a href="https://scan.coverity.com/projects/1853">
+<a href="https://scan.coverity.com/projects/1883">
   <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/1853/badge.svg"/>
+       src="https://scan.coverity.com/projects/1883/badge.svg"/>
 </a>
+
 
 ### We need your help
 

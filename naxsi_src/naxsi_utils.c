@@ -285,6 +285,10 @@ ngx_http_wlr_merge(ngx_conf_t *cf, ngx_http_whitelist_rule_t *father_wl,
 		   ngx_http_rule_t *curr) {
   uint i;
   ngx_int_t		*tmp_ptr;
+
+#ifdef whitelist_debug
+  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "[naxsi] merging similar wl(s)");
+#endif
   
   if (!father_wl->ids)
     {
@@ -376,6 +380,7 @@ ngx_http_wlr_identify(ngx_conf_t *cf, ngx_http_dummy_loc_conf_t *dlc,
   return (NGX_OK);
 }
 
+//#define whitelist_heavy_debug
 
 ngx_http_whitelist_rule_t *
 ngx_http_wlr_find(ngx_conf_t *cf, ngx_http_dummy_loc_conf_t *dlc,
@@ -395,8 +400,14 @@ ngx_http_wlr_find(ngx_conf_t *cf, ngx_http_dummy_loc_conf_t *dlc,
     *fullname = ngx_pcalloc(cf->pool, custloc_array(curr->br->custom_locations->elts)[name_idx].target.len +
 			    custloc_array(curr->br->custom_locations->elts)[uri_idx].target.len + 3);
     /* if WL targets variable name instead of content, prefix hash with '#' */
-    if (curr->br->target_name)
+    if (curr->br->target_name) {
+#ifdef whitelist_heavy_debug
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, 
+			 "whitelist targets |NAME");
+#endif
+      
       strncat(*fullname, (const char *) "#", 1);
+    }
     strncat(*fullname, (const char *) custloc_array(curr->br->custom_locations->elts)[uri_idx].target.data, 
 	    custloc_array(curr->br->custom_locations->elts)[uri_idx].target.len);
     strncat(*fullname, (const char *) "#", 1);
@@ -410,7 +421,17 @@ ngx_http_wlr_find(ngx_conf_t *cf, ngx_http_dummy_loc_conf_t *dlc,
 		       "whitelist has uri");
 #endif
     //XXX set flag only_uri
-    *fullname = ngx_pcalloc(cf->pool, custloc_array(curr->br->custom_locations->elts)[uri_idx].target.len + 1);
+    *fullname = ngx_pcalloc(cf->pool, custloc_array(curr->br->custom_locations->elts)[uri_idx].target.len + 3);
+    if (curr->br->target_name) {
+#ifdef whitelist_heavy_debug
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, 
+			 "whitelist targets |NAME");
+#endif
+      
+      strncat(*fullname, (const char *) "#", 1);
+    }
+
+
     strncat(*fullname, (const char *) custloc_array(curr->br->custom_locations->elts)[uri_idx].target.data, 
 	    custloc_array(curr->br->custom_locations->elts)[uri_idx].target.len);
   }
@@ -617,6 +638,7 @@ ngx_http_wlr_finalize_hashtables(ngx_conf_t *cf, ngx_http_dummy_loc_conf_t  *dlc
 
 //#define rx_matchzone_debug
 //#define whitelist_heavy_debug
+
 ngx_int_t
 ngx_http_dummy_create_hashtables_n(ngx_http_dummy_loc_conf_t *dlc, 
 				   ngx_conf_t *cf)
@@ -624,6 +646,8 @@ ngx_http_dummy_create_hashtables_n(ngx_http_dummy_loc_conf_t *dlc,
   int				zone, uri_idx, name_idx, ret;
   ngx_http_rule_t		*curr_r/*, *father_r*/;
   ngx_http_whitelist_rule_t	*father_wlr;
+  ngx_http_rule_t **rptr;
+  ngx_regex_compile_t *rgc;
   char			*fullname;
   uint	i;
 
@@ -702,8 +726,6 @@ ngx_http_dummy_create_hashtables_n(ngx_http_dummy_loc_conf_t *dlc,
 					 sizeof(ngx_http_rule_t *));
 	if (!dlc->rxmz_wlr) return (NGX_ERROR);
       }
-      ngx_http_rule_t **rptr;
-      ngx_regex_compile_t *rgc;
       if (name_idx != -1) {
 	custloc_array(curr_r->br->custom_locations->elts)[name_idx].target_rx = 
 	  ngx_pcalloc(cf->pool, sizeof(ngx_regex_compile_t));
@@ -797,9 +819,16 @@ static char *dummy_match_zones[] = {
 
 
 void naxsi_log_offending(ngx_str_t *name, ngx_str_t *val, ngx_http_request_t *req, ngx_http_rule_t *rule,
-			 enum DUMMY_MATCH_ZONE	zone) {
+			 enum DUMMY_MATCH_ZONE	zone, ngx_int_t target_name) {
   ngx_str_t			tmp_uri, tmp_val, tmp_name;
   ngx_str_t			empty=ngx_string("");
+  char				tmp_zone[30];
+
+  /* 30 is more than enough */
+  memset(tmp_zone, 0, 30);
+  memcpy(tmp_zone, dummy_match_zones[zone], strlen(dummy_match_zones[zone]));
+  if (target_name)
+    strcat(tmp_zone, "|NAME");
   
   //encode uri
   tmp_uri.len = req->uri.len + (2 * ngx_escape_uri(NULL, req->uri.data, req->uri.len,
@@ -834,7 +863,7 @@ void naxsi_log_offending(ngx_str_t *name, ngx_str_t *val, ngx_http_request_t *re
   ngx_log_error(NGX_LOG_ERR, req->connection->log, 0, 
 		"NAXSI_EXLOG: ip=%V&server=%V&uri=%V&id=%d&zone=%s&var_name=%V&content=%V", 
 		&(req->connection->addr_text), &(req->headers_in.server),
-		&(tmp_uri), rule->rule_id, dummy_match_zones[zone], &(tmp_name), &(tmp_val));
+		&(tmp_uri), rule->rule_id, tmp_zone /*dummy_match_zones[zone]*/, &(tmp_name), &(tmp_val));
   
   if (tmp_val.len > 0)
     ngx_pfree(req->pool, tmp_val.data);
